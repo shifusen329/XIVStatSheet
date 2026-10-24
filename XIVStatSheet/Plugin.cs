@@ -1,28 +1,32 @@
-﻿using Dalamud.Game.Command;
+﻿using System;
+using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
-using System.IO;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
-using SamplePlugin.Windows;
+using XIVStatSheet.Export;
+using XIVStatSheet.Windows;
 
-namespace SamplePlugin;
+namespace XIVStatSheet;
 
 public sealed class Plugin : IDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
-    [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
+    [PluginService] internal static IGameInventory GameInventory { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
+    [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
-    private const string CommandName = "/pmycommand";
+    private const string CommandName = "/statsheet";
+    private const string ChatTag = "XIVStatSheet";
 
     public Configuration Configuration { get; init; }
+    public ExportResult? LastExport { get; private set; }
 
-    public readonly WindowSystem WindowSystem = new("SamplePlugin");
+    public readonly WindowSystem WindowSystem = new("XIVStatSheet");
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
 
@@ -30,18 +34,15 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // You might normally want to embed resources and load them from the manifest stream
-        var goatImagePath = Path.Combine(PluginInterface.AssemblyLocation.Directory?.FullName!, "goat.png");
-
         ConfigWindow = new ConfigWindow(this);
-        MainWindow = new MainWindow(this, goatImagePath);
+        MainWindow = new MainWindow(this);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "A useful message to display in /xlhelp"
+            HelpMessage = "Open the stat sheet window. Use \"/statsheet export\" to save your current stats and gear to file."
         });
 
         // Tell the UI system that we want our windows to be drawn through the window system
@@ -53,11 +54,6 @@ public sealed class Plugin : IDalamudPlugin
 
         // Adds another button doing the same but for the main ui of the plugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
-
-        // Add a simple message to the log with level set to information
-        // Use /xllog to open the log window in-game
-        // Example Output: 00:57:54.959 | INF | [SamplePlugin] ===A cool log message from Sample Plugin===
-        Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
     }
 
     public void Dispose()
@@ -66,7 +62,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
-        
+
         WindowSystem.RemoveAllWindows();
 
         ConfigWindow.Dispose();
@@ -75,12 +71,44 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(CommandName);
     }
 
+    // Shared by the window button and the slash command, both of which run on the game thread
+    public ExportResult Export()
+    {
+        var sheet = StatSheetCollector.Collect(out var error);
+        if (sheet == null)
+            return LastExport = new ExportResult(DateTime.Now, [], null, error);
+
+        try
+        {
+            var paths = StatSheetWriter.Write(sheet, Configuration);
+            return LastExport = new ExportResult(DateTime.Now, paths, sheet, null);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to write stat sheet");
+            return LastExport = new ExportResult(DateTime.Now, [], sheet, ex.Message);
+        }
+    }
+
     private void OnCommand(string command, string args)
     {
-        // In response to the slash command, toggle the display status of our main ui
-        MainWindow.Toggle();
+        if (!args.Trim().Equals("export", StringComparison.OrdinalIgnoreCase))
+        {
+            MainWindow.Toggle();
+            return;
+        }
+
+        var result = Export();
+        if (result.Error != null)
+        {
+            ChatGui.PrintError($"Export failed: {result.Error}", ChatTag);
+            return;
+        }
+
+        foreach (var path in result.Paths)
+            ChatGui.Print($"Saved {path}", ChatTag);
     }
-    
+
     public void ToggleConfigUi() => ConfigWindow.Toggle();
     public void ToggleMainUi() => MainWindow.Toggle();
 }

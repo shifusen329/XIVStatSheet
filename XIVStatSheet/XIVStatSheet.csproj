@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.0.1.0</Version>
+    <!-- Manifest fields (see https://github.com/goatcorp/DalamudPackager/blob/827d88dc/DalamudPackager/DalamudPackager.cs#L420) -->
+    <Author>shifusen329</Author>
+    <Name>XIV Stat Sheet</Name>
+    <Punchline>Export your character's current stats and gear to JSON and Markdown.</Punchline>
+    <Description>Takes a snapshot of your character's current stats and equipped gear (item levels, HQ, materia, glamour)
+and saves it as a JSON file for tools and a Markdown file for sharing. Use /statsheet to open the window.</Description>
+    <RepoUrl>https://github.com/shifusen329/XIVStatSheet</RepoUrl>
+    <Tags>stats;gear;export</Tags>
+  </PropertyGroup>
+</Project>
